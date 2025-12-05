@@ -1,30 +1,65 @@
-from fastapi import APIRouter, HTTPException, Query
+# app/routes/documents.py
+from fastapi import APIRouter, Query, HTTPException
 from typing import List, Optional
-from bson import ObjectId
-from ..db import init_db
-from ..utils import oid_to_str
+from ..db import get_pool
+from ..config import settings
 
-db = init_db()
 router = APIRouter(prefix="/api/v1")
 
-@router.get("/documents", summary="List extracted documents")
-async def list_documents(limit: int = 20, skip: int = 0):
-    cursor = db.documents.find().sort("created_at", -1).skip(skip).limit(limit)
-    docs = []
-    async for d in cursor:
-        d2 = oid_to_str(d)
-        # convert upload_id and _id to strings
-        d2["upload_id"] = str(d.get("upload_id")) if d.get("upload_id") else None
-        d2["_id"] = str(d.get("_id"))
-        docs.append(d2)
-    return {"count": len(docs), "results": docs}
+@router.get("/data")
+async def get_data(limit: int = 50, offset: int = 0, columns: Optional[str] = None):
+    """
+    columns: comma-separated list of columns (normalized names). If omitted, returns all columns.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        # sanitize columns if provided
+        if columns:
+            cols = [c.strip() for c in columns.split(",") if c.strip()]
+            # ensure col names are available in table
+            rows = await conn.fetch(
+                """
+                SELECT column_name FROM information_schema.columns WHERE table_name = $1
+                """,
+                settings.MAIN_TABLE_NAME
+            )
+            existing = {r["column_name"] for r in rows}
+            for c in cols:
+                if c not in existing:
+                    raise HTTPException(status_code=400, detail=f"Unknown column: {c}")
+            cols_sql = ', '.join(f'"{c}"' for c in cols)
+        else:
+            cols_sql = '*'
+        query = f'SELECT {cols_sql} FROM {settings.MAIN_TABLE_NAME} ORDER BY id DESC LIMIT $1 OFFSET $2;'
+        result = await conn.fetch(query, limit, offset)
+        # convert Record to dicts
+        return [dict(r) for r in result]
 
-@router.get("/documents/{doc_id}", summary="Get document by id")
-async def get_document(doc_id: str):
-    d = await db.documents.find_one({"_id": ObjectId(doc_id)})
-    if not d:
-        raise HTTPException(status_code=404, detail="Document not found")
-    d2 = oid_to_str(d)
-    d2["upload_id"] = str(d.get("upload_id")) if d.get("upload_id") else None
-    d2["_id"] = str(d.get("_id"))
-    return d2
+@router.get("/analyze")
+async def analyze(column: str):
+    """
+    Simple aggregate on a column (must be numeric or castable).
+    Returns count, sum, avg, min, max.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        # Ensure column exists
+        rows = await conn.fetch(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = $2",
+            settings.MAIN_TABLE_NAME, column
+        )
+        if not rows:
+            raise HTTPException(status_code=400, detail="Column not found")
+        # Perform numeric aggregates; treat values by casting to numeric if possible, else return nulls
+        sql = f"""
+        SELECT
+            COUNT(1) as count,
+            SUM(NULLIF(REGEXP_REPLACE("{column}", '[,]', '', 'g')::numeric, '' )) as sum,
+            AVG(NULLIF(REGEXP_REPLACE("{column}", '[,]', '', 'g')::numeric, '' )) as avg,
+            MIN(NULLIF(REGEXP_REPLACE("{column}", '[,]', '', 'g')::numeric, '' )) as min,
+            MAX(NULLIF(REGEXP_REPLACE("{column}", '[,]', '', 'g')::numeric, '' )) as max
+        FROM {settings.MAIN_TABLE_NAME}
+        WHERE "{column}" ~ '^[0-9,\\.]+$'  -- only numeric-ish rows
+        """
+        res = await conn.fetchrow(sql)
+        return dict(res)

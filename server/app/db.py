@@ -1,42 +1,54 @@
+# app/db.py
+import asyncio
 import logging
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import PyMongoError
+import asyncpg
+from typing import Optional   # ← REQUIRED IMPORT
+
 from .config import settings
 
 logger = logging.getLogger("uvicorn.error")
 
-_client: AsyncIOMotorClient | None = None
-db = None
+_pool: Optional[asyncpg.pool.Pool] = None
 
 
-def init_db():
+async def _create_pool():
     """
-    Initialize MongoDB connection with error handling & logging.
+    Create a global asyncpg connection pool.
     """
-    global _client, db
+    global _pool
+    if _pool:
+        return _pool
 
-    if _client is not None:
-        return db  # Already initialized
+    logger.info("Creating asyncpg pool...")
 
-    try:
-        logger.info(f"Connecting to MongoDB at: {settings.MONGO_URI}")
+    _pool = await asyncpg.create_pool(
+        dsn=settings.DATABASE_URL,
+        min_size=settings.DB_POOL_MIN,
+        max_size=settings.DB_POOL_MAX
+    )
 
-        # Create client
-        _client = AsyncIOMotorClient(settings.MONGO_URI)
+    logger.info("PostgreSQL pool created.")
+    return _pool
 
-        # Select database
-        db = _client[settings.DB_NAME]
 
-        # OPTIONAL: Test the connection with a ping
-        # Note: Must run inside event loop later, so log only
-        logger.info(f"MongoDB client created successfully for DB: {settings.DB_NAME}")
+async def get_pool():
+    """Return the pool, creating it if needed."""
+    return await _create_pool()
 
-    except PyMongoError as e:
-        logger.error("❌ MongoDB connection failed!", exc_info=True)
-        raise RuntimeError(f"Failed to initialize MongoDB: {e}") from e
 
-    except Exception as e:
-        logger.error("❌ Unexpected error while initializing MongoDB!", exc_info=True)
-        raise RuntimeError(f"Unexpected DB initialization error: {e}") from e
+async def ensure_main_table():
+    """
+    Creates the expandable SQL table if it doesn't exist.
+    """
+    pool = await get_pool()
 
-    return db
+    async with pool.acquire() as conn:
+        await conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS {settings.MAIN_TABLE_NAME} (
+            id BIGSERIAL PRIMARY KEY,
+            uploaded_at TIMESTAMPTZ DEFAULT now()
+            -- dynamic columns will be added later during upload
+        );
+        """)
+
+        logger.info(f"Ensured main table '{settings.MAIN_TABLE_NAME}' exists.")
