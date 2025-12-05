@@ -1,9 +1,7 @@
-// src/components/Upload.jsx
 import React, { useRef, useState } from "react";
 import { uploadPDF } from "../api";
-import TablesPreview from "./TablePreview";
 
-export default function Upload({ onUploaded }) {
+export default function Upload({ onResult }) {
   const fileRef = useRef();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
@@ -13,19 +11,18 @@ export default function Upload({ onUploaded }) {
     setBusy(true);
     setMessage("Uploading...");
     setResult(null);
+
     try {
       const data = await uploadPDF(file);
-      // data contains upload_id, tables, fields, norm_fields
+      // data: { columns: [...], rows: [...] }
       setResult(data);
-      setMessage("Upload & extraction done.");
-      setBusy(false);
-
-      // inform parent (optional) with extracted doc id if present
-      if (data.upload_id && onUploaded) onUploaded(data.upload_id);
+      setMessage("Upload & extraction completed.");
+      if (onResult) onResult(data);
     } catch (err) {
-      setBusy(false);
-      setMessage("Upload failed: " + (err.message || err));
       console.error(err);
+      setMessage("Upload failed: " + (err.message || err));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -42,7 +39,7 @@ export default function Upload({ onUploaded }) {
 
   return (
     <div>
-      <label className="block mb-2 text-sm font-medium">Upload PDF</label>
+      <label className="block mb-2 text-sm font-medium">Upload PDF (first table only)</label>
 
       <div
         className={`border-2 border-dashed rounded-md p-4 text-center cursor-pointer ${
@@ -60,17 +57,11 @@ export default function Upload({ onUploaded }) {
           onChange={onPick}
         />
         <div className="flex flex-col items-center gap-2">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-10 w-10 text-slate-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 16v-4m0 0l-4 4m4-4l4 4M17 8v8m0 0l4-4m-4 4l-4-4" />
           </svg>
-          <div className="text-sm text-slate-600">Click or drop a PDF here to upload</div>
-          <div className="text-xs text-slate-400">Max file size enforced by server</div>
+          <div className="text-sm text-slate-600">Click or drop a PDF here</div>
+          <div className="text-xs text-slate-400">Backend expected at /api/upload</div>
         </div>
       </div>
 
@@ -78,15 +69,10 @@ export default function Upload({ onUploaded }) {
         {message ? <div>{message}</div> : <div>No uploads yet.</div>}
       </div>
 
-      {/* Show extracted tables if available */}
       {result && (
-        <div className="mt-6">
-          <div className="mb-4">
-            <strong className="text-sm">Extracted:</strong>{" "}
-            <span className="text-xs text-slate-500">Upload ID: {result.upload_id}</span>
-          </div>
-
-          <TablesPreview tables={result.tables || []} fields={result.norm_fields || {}} />
+        <div className="mt-4">
+          <div className="text-sm font-medium mb-2">Extracted Table</div>
+          <div className="text-xs text-slate-500 mb-2">Columns: {result.columns.join(", ")}</div>
         </div>
       )}
     </div>

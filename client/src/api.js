@@ -1,36 +1,28 @@
-const BASE = "http://localhost:8000/api";
+// src/api.js
+const BASE = "http://localhost:8000/api"; // backend route base (server serves /api/upload)
 
-export async function uploadPDF(file, onProgress) {
+export async function uploadPDF(file) {
   const form = new FormData();
   form.append("file", file);
 
-  // Use fetch; no progress in pure fetch for uploads in all browsers,
-  // but the UI will show a spinner and poll status.
   const res = await fetch(`${BASE}/upload`, {
     method: "POST",
     body: form,
   });
+
   if (!res.ok) {
-    const err = await res.json().catch(()=>({detail: res.statusText}));
-    throw new Error(err.detail || res.statusText);
+    // try to read JSON error, fallback to status text
+    const errBody = await res.text().catch(()=>null);
+    let msg = errBody || res.statusText || "Upload failed";
+    throw new Error(msg);
   }
-  return res.json(); // {upload_id: "..."}
-}
 
-export async function getUploadStatus(upload_id) {
-  const res = await fetch(`${BASE}/upload/${upload_id}`);
-  if (!res.ok) throw new Error("Upload status fetch failed");
+  // API returns: { columns: [...], rows: [...] }
   return res.json();
 }
 
-export async function listDocuments(limit = 20, skip = 0) {
-  const res = await fetch(`${BASE}/documents?limit=${limit}&skip=${skip}`);
-  if (!res.ok) throw new Error("List documents failed");
-  return res.json();
-}
-
-export async function getDocument(doc_id) {
-  const res = await fetch(`${BASE}/documents/${doc_id}`);
-  if (!res.ok) throw new Error("Get document failed");
+export async function getData(limit = 50, offset = 0) {
+  const res = await fetch(`${BASE}/data?limit=${limit}&offset=${offset}`);
+  if (!res.ok) throw new Error("Fetch data failed");
   return res.json();
 }
