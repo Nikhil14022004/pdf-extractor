@@ -16,7 +16,7 @@ app = FastAPI(title="PDF Extractor API")
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "*",
+    "https://pdf-extractor-1-xxa4.onrender.com",
 ]
 
 app.add_middleware(

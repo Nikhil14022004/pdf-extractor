@@ -1,28 +1,58 @@
-// src/api.js
-const BASE = "http://localhost:8000/api"; // backend route base (server serves /api/upload)
+// const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
-export async function uploadPDF(file) {
-  const form = new FormData();
-  form.append("file", file);
+// export async function uploadPdf(formData) {
+//   const res = await fetch(`${API_BASE}/upload`, {
+//     method: "POST",
+//     body: formData,
+//   });
 
-  const res = await fetch(`${BASE}/upload`, {
+//   if (!res.ok) {
+//     throw new Error("Upload failed");
+//   }
+
+//   return res.json();
+// }
+
+// // 👇 used by the “View database” tab
+// export async function getData(limit = 100, offset = 0) {
+//   const res = await fetch(
+//     `${API_BASE}/api/data?limit=${encodeURIComponent(
+//       limit
+//     )}&offset=${encodeURIComponent(offset)}`
+//   );
+
+//   if (!res.ok) {
+//     // this is the message you see in the red box
+//     throw new Error("Fetch data failed");
+//   }
+
+//   return res.json();
+// }
+
+
+const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+export async function uploadPdf(formData) {
+  const res = await fetch(`${API_BASE}/upload`, {
     method: "POST",
-    body: form,
+    body: formData,
   });
 
   if (!res.ok) {
-    // try to read JSON error, fallback to status text
-    const errBody = await res.text().catch(()=>null);
-    let msg = errBody || res.statusText || "Upload failed";
-    throw new Error(msg);
+    throw new Error("Upload failed");
   }
 
-  // API returns: { columns: [...], rows: [...] }
   return res.json();
 }
 
-export async function getData(limit = 50, offset = 0) {
-  const res = await fetch(`${BASE}/data?limit=${limit}&offset=${offset}`);
-  if (!res.ok) throw new Error("Fetch data failed");
+export async function getData(limit = 100, offset = 0) {
+  const res = await fetch(
+    `${API_BASE}/api/data?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`
+  );
+
+  if (!res.ok) {
+    throw new Error("Fetch data failed");
+  }
+
   return res.json();
 }
