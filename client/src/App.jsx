@@ -261,6 +261,7 @@
 // src/App.jsx
 import React, { useState } from "react";
 import Upload from "./components/Upload";
+
 import TableView from "./components/TableView";
 import AnalyzePanel from "./components/AnalyzePanel";
 
